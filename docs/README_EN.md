@@ -2,7 +2,7 @@
 
 [简体中文](README_ZH.md) · [English](README_EN.md)
 
-This repository contains some modules for Crack Detection and Semantic Segmentation, mainly using Window 11 + Conda virtual environment. 
+This repository contains some simple modules for Crack Detection and Semantic Segmentation, mainly using Window 11 + Conda virtual environment. 
 
 The environment configuration is [here](#config).
 
