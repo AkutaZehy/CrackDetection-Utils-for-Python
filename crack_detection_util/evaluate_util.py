@@ -8,7 +8,7 @@ from torchvision.transforms import ToTensor
 
 class Evaluator:
 
-    def __init__(self, input_folder, dataset):
+    def __init__(self, input_folder, dataset=None):
         '''
         The Evaluator class is used to evaluate the performance of the Semantic Segmentation models.
 
@@ -17,20 +17,19 @@ class Evaluator:
             dataset: str, the dataset name (e.g. "crack500")
         '''
         self.input_folder = input_folder
-        self.dataset = dataset
+        self.dataset = dataset 
         self.train_folder = os.path.join(input_folder, 'train')
         self.val_folder = os.path.join(input_folder, 'val')
 
-    def calculate_evaluation_metrics(self, input_folder=None, dataset=None, calculate_mae=True, calculate_miou=True, calculate_map=True):
+    def calculate_evaluation_metrics(self, input_folder=None, dataset=None, beta=1):
         '''
-        Calculate the evaluation metrics (MAE, mIoU, and mAP) between the true and prediction masks.
+        Calculate the evaluation metrics (MAE, mIoU, mAP, Recall, F-measure) between the true and prediction masks.
         The result will be saved in a csv file named "scores.csv" in the input folder.
 
         Args:
             input_folder: str, the folder containing the true and prediction folders
-            calculate_mae: bool, whether to calculate MAE (default: True)
-            calculate_miou: bool, whether to calculate mIoU (default: True)
-            calculate_map: bool, whether to calculate mAP (default: True)
+            dataset: str, the dataset name (e.g. "crack500")
+            beta: float, the beta value for F-measure calculation (default: 1)
         '''
         input_folder = input_folder if input_folder else self.input_folder
         dataset = dataset if dataset else self.dataset
@@ -39,12 +38,10 @@ class Evaluator:
         pred_folder = os.path.join(evaluate_folder, 'prediction')
 
         model_scores = {}
-        if calculate_mae:
-            model_mae = {}
-        if calculate_miou:
-            model_miou = {}
-        if calculate_map:
-            model_map = {}
+        model_recall = {}
+        model_f_measure = {}
+
+        total_files = 0
 
         for model_name in os.listdir(pred_folder):
             model_folder = os.path.join(pred_folder, model_name)
@@ -54,6 +51,8 @@ class Evaluator:
             mae_sum = 0
             miou_sum = 0
             map_sum = 0
+            recall_sum = 0
+            f_measure_sum = 0
             file_count = 0
 
             for file_name in os.listdir(model_folder):
@@ -71,63 +70,80 @@ class Evaluator:
                 true_mask = transform(true_image)
                 pred_mask = transform(pred_image)
 
-                true_mask_binary = true_mask > 0
-                pred_mask_binary = pred_mask > 0
+                true_mask_binary = true_mask > 0.5
+                pred_mask_binary = pred_mask > 0.5
 
-                tp = torch.logical_and(true_mask_binary, pred_mask_binary).sum().item()
+                # Dilate the true masks
+                dilate_radius = 1
+                dilated_mask = torch.nn.functional.max_pool2d(true_mask_binary.float(), kernel_size=dilate_radius*2+1, stride=1, padding=dilate_radius)
+                true_mask_binary_fixed = dilated_mask > 0.5
+
+                tp = torch.logical_and(true_mask_binary_fixed, pred_mask_binary).sum().item()
                 tn = torch.logical_and(~true_mask_binary, ~pred_mask_binary).sum().item()
-                fp = torch.logical_and(~true_mask_binary, pred_mask_binary).sum().item()
+                fp = torch.logical_and(~true_mask_binary_fixed, pred_mask_binary).sum().item()
                 fn = torch.logical_and(true_mask_binary, ~pred_mask_binary).sum().item()
 
-                if calculate_mae:
-                    mae = (fp + fn) / (tp + tn + fp + fn)
-                    mae_sum += mae
+                # MAE
+                mae = (fp + fn) / (tp + tn + fp + fn)
+                mae_sum += mae
 
-                if calculate_miou:
-                    if tp + fp + fn == 0:
-                        iou = 1
-                    else:
-                        iou = tp / (tp + fp + fn)
-                    miou_sum += iou
+                # Recall
+                if tp + fn == 0:
+                    recall = 1
+                else:
+                    recall = tp / (tp + fn)
+                recall_sum += recall
 
-                if calculate_map:
-                    ap = (tp + tn) / (tp + fp + tn + fn)
-                    map_sum += ap
+                # Mean IoU
+                if tp + fp + fn == 0:
+                    iou = 1
+                else:
+                    iou = tp / (tp + fp + fn)
+                miou_sum += iou
+
+                # Precision
+                if tp + fp == 0:
+                    ap = 1
+                else:
+                    ap = tp / (tp + fp)
+                map_sum += ap
+
+                # F-measure
+                if tp + fp + fn == 0 or tp == 0:
+                    f_measure = 0
+                else:
+                    # precision = tp / (tp + fp)
+                    # recall = tp / (tp + fn)
+                    # f_measure = (1 + beta**2) * (precision * recall) / ((beta**2 * precision) + recall)
+                    f_measure = (2 * tp) / (2 * tp + fp + fn)
+                f_measure_sum += f_measure
 
                 file_count += 1
 
             if file_count > 0:
-                if calculate_mae:
-                    model_mae[model_name] = (mae_sum / file_count, file_count)
-                if calculate_miou:
-                    model_miou[model_name] = (miou_sum / file_count, file_count)
-                if calculate_map:
-                    model_map[model_name] = (map_sum / file_count, file_count)
+                model_scores[model_name] = {
+                    'MAE': (mae_sum / file_count),
+                    'mIoU': (miou_sum / file_count),
+                    'mAP': (map_sum / file_count),
+                    'Recall': (recall_sum / file_count),
+                    'F-measure': (f_measure_sum / file_count)
+            }
 
-        if calculate_mae:
-            model_scores['MAE'] = model_mae
-        if calculate_miou:
-            model_scores['mIoU'] = model_miou
-        if calculate_map:
-            model_scores['mAP'] = model_map
+            total_files = file_count
 
-        csv_path = os.path.join(input_folder, self.dataset + '_scores.csv')
+        csv_path = os.path.join(input_folder, dataset + '_scores.csv')
         with open(csv_path, 'w', newline='') as csvfile:
             writer = csv.writer(csvfile)
-            writer.writerow(['Model Name', 'MAE', 'mIoU', 'mAP', 'File Count'])
-            for model_name, (mae, mae_file_count) in model_mae.items():
-                iou = model_miou.get(model_name, (0, 0))[0]
-                ap = model_map.get(model_name, (0, 0))[0]
-                file_count = mae_file_count
-                writer.writerow([model_name, mae, iou, ap, file_count])
+            writer.writerow(['Dataset', 'Total Files', 'Model Name', 'MAE', 'mIoU', 'mAP', 'Recall', 'F-measure'])
+            for model_name, scores in model_scores.items():
+                writer.writerow([dataset, total_files, model_name, scores['MAE'], scores['mIoU'], scores['mAP'], scores['Recall'], scores['F-measure']])
 
         print(f"Scores saved in {csv_path}")
 
     def merge_csv_files(self, input_folder=None):
+
         '''
         Merge all csv files in the input folder.
-        Extract the dataset field from each file (split by the last underscore).
-        Add a "dataset" field to each file with the same value.
         Output the merged file as "scores.csv" and print the output message.
 
         Args:
@@ -142,11 +158,26 @@ class Evaluator:
 
         csv_files = [file_name for file_name in os.listdir(input_folder) if file_name.endswith('.csv')]
         for file_name in csv_files:
-            dataset = file_name.rsplit('_', 1)[0]
             file_path = os.path.join(input_folder, file_name)
             data = pd.read_csv(file_path)
-            data['dataset'] = dataset
             merged_data = pd.concat([merged_data, data], ignore_index=True)
 
         merged_data.to_csv(merged_file_path, index=False)
         print(f"Merged file saved in {merged_file_path}")
+
+    def evaluate_all_datasets(self, input_folder=None):
+        '''
+        Evaluate all datasets in the input folder and merge the results into a single CSV file.
+
+        Args:
+            input_folder: str, the folder containing the datasets
+        '''
+        input_folder = input_folder if input_folder else self.input_folder
+
+        evaluator = Evaluator(input_folder, '')
+        dataset_folders = [folder for folder in os.listdir(input_folder) if os.path.isdir(os.path.join(input_folder, folder))]
+        
+        for dataset_folder in dataset_folders:
+            evaluator.calculate_evaluation_metrics(input_folder=input_folder, dataset=dataset_folder)
+        
+        evaluator.merge_csv_files(input_folder=input_folder)
