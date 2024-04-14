@@ -103,11 +103,17 @@ Firstly, calculate the confusion matrix between the predicted mask and the actua
 
 $$
 TP = T' \cap P
-\\
+$$
+
+$$
 TN = \neg T \cap \neg P
-\\
+$$
+
+$$
 FP = \neg T' \cap P
-\\
+$$
+
+$$
 FN = T \cap \neg P
 $$
 
@@ -117,13 +123,21 @@ Then, calculate the metrics of a single picture:
 
 $$
 MAE^1 = \frac{FP + FN}{TP + FP + FN + TN} 
-\\
+$$
+
+$$
 IoU = \frac{TP}{TP + FP + FN}
-\\
+$$
+
+$$
 AP = \frac{TP}{TP + FP}
-\\
+$$
+
+$$
 Recall = \frac{TP}{TP + FN}
-\\
+$$
+
+$$
 F_1 = \frac{2 \times AP \times Recall}{AP + Recall} = \frac{2 TP}{2 TP + FP + FN}
 $$
 
@@ -143,9 +157,11 @@ The process steps for a single image is as follows:
 
 1. Count the number of cracks n by finding contours in the binary mask.
 2. Calculate the Median RGB as bottom color by channels. (Obviously a 3d-median cannot be directly calculated) 
+   
 $$
 MedianRGB = Median(R), Median(G), Median(B)
 $$
+
 3. Randomly choose cracks.
 4. Dilate the cracks by 2 pixels radius to conclude better crack mask.
 5. Fill the cracks using Median RGB.
