@@ -141,8 +141,6 @@ $$
 F_1 = \frac{2 \times AP \times Recall}{AP + Recall} = \frac{2 TP}{2 TP + FP + FN}
 $$
 
-1 Obviously, when `dilate_radius ≠ 0`, $TP+FP+FN+TN>Image Size$, that is to say, MAE only works when `dilate_radius = 0` now.
-
 ### For Tiny Tools
 
 #### Shadow Removal
